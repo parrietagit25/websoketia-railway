@@ -7,6 +7,8 @@ const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 console.log("🚀 WebSocket server running on PORT:", PORT);
 
+console.log("🔑 OPENAI_API_KEY length:", OPENAI_API_KEY ? OPENAI_API_KEY.length : 0);
+
 // --- Cliente OpenAI (Realtime REST → para enviar texto) ---
 const client = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY
