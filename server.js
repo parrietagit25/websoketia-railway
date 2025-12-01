@@ -1,8 +1,9 @@
-// server.js (versión usando Realtime API)
+// server.js  (Railway <-> OpenAI Realtime <-> Cliente)
 import WebSocket, { WebSocketServer } from "ws";
 
 const PORT = process.env.PORT || 8080;
 
+// --- Config Automarket ---
 const AUTOMARKET_API_BASE =
   process.env.AUTOMARKET_API_BASE ||
   "https://automarketpanama.com/api/api_inventario.php";
@@ -10,6 +11,7 @@ const AUTOMARKET_API_BASE =
 const AUTOMARKET_TOKEN =
   process.env.AUTOMARKET_TOKEN || "cholitotecnico";
 
+// --- Config OpenAI Realtime ---
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 if (!OPENAI_API_KEY) {
   console.error("❌ FALTA OPENAI_API_KEY en Railway");
@@ -18,10 +20,15 @@ if (!OPENAI_API_KEY) {
 const OPENAI_REALTIME_URL =
   "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview";
 
+// --- Servidor WebSocket principal (Railway) ---
 const wss = new WebSocketServer({ port: PORT });
 console.log("🚀 WebSocket server (bridge) running on PORT:", PORT);
 
-// --- Detección simple de marca en el texto ---
+// ---------------------------------------------------------------------
+// Utilidades
+// ---------------------------------------------------------------------
+
+// Detección simple de marca en el texto
 function detectBrand(text) {
   const brands = [
     "hyundai",
@@ -55,7 +62,7 @@ function detectBrand(text) {
   return null;
 }
 
-// --- Llamada real al API de Automarket ---
+// Llamada real al API de Automarket
 async function fetchAutomarket(userText) {
   const brand = detectBrand(userText); // ej: "hyundai"
 
@@ -83,7 +90,9 @@ async function fetchAutomarket(userText) {
   }
 }
 
-// --- WebSocket principal (cliente <-> Railway) ---
+// ---------------------------------------------------------------------
+// Conexión cliente <-> Railway <-> OpenAI Realtime
+// ---------------------------------------------------------------------
 wss.on("connection", (clientWs) => {
   console.log("🟢 Cliente conectado a Railway");
 
@@ -95,26 +104,42 @@ wss.on("connection", (clientWs) => {
     },
   });
 
+  // Helper para mandar eventos a OpenAI esperando a que abra
+  const sendToOpenAI = (payload) => {
+    const json = JSON.stringify(payload);
+
+    if (openaiWs.readyState === WebSocket.OPEN) {
+      openaiWs.send(json);
+    } else if (openaiWs.readyState === WebSocket.CONNECTING) {
+      openaiWs.once("open", () => {
+        openaiWs.send(json);
+      });
+    } else {
+      console.error(
+        "❌ No se puede enviar a OpenAI, estado:",
+        openaiWs.readyState
+      );
+    }
+  };
+
+  // Cuando se abre la conexión con Realtime, configuramos la sesión
   openaiWs.on("open", () => {
     console.log("🔗 Conectado a OpenAI Realtime");
 
-    // Configuramos la sesión (instrucciones, solo texto)
-    openaiWs.send(
-      JSON.stringify({
-        type: "session.update",
-        session: {
-          modalities: ["text"],
-          instructions:
-            "Eres un asesor de ventas de Automarket Panamá. " +
-            "Responde SIEMPRE en español. " +
-            "Usa SOLO los vehículos que aparezcan en el inventario JSON que te envío. " +
-            "Si la lista está vacía o hay error, dilo claramente y da recomendaciones generales.",
-        },
-      })
-    );
+    sendToOpenAI({
+      type: "session.update",
+      session: {
+        modalities: ["text"],
+        instructions:
+          "Eres un asesor de ventas de Automarket Panamá. " +
+          "Responde SIEMPRE en español. " +
+          "Usa SOLO los vehículos que aparezcan en el inventario JSON que te envío. " +
+          "Si la lista está vacía o hay error, dilo claramente y da recomendaciones generales.",
+      },
+    });
   });
 
-  // 2) Mensajes que vienen del navegador
+  // 2) Mensajes que vienen del navegador / cliente
   clientWs.on("message", async (msg) => {
     try {
       const data = JSON.parse(msg.toString());
@@ -123,48 +148,46 @@ wss.on("connection", (clientWs) => {
         const userText = data.text || "";
         console.log("📝 Pregunta del usuario:", userText);
 
-        // a) Inventario real Automarket
+        // a) Obtener inventario de Automarket
         const autos = await fetchAutomarket(userText);
 
-        // b) Creamos el "mensaje del usuario" dentro de la conversación Realtime
         const content =
           `Pregunta del cliente: ${userText}\n\n` +
           `Inventario Automarket (JSON): ${JSON.stringify(autos)}`;
 
-        openaiWs.send(
-          JSON.stringify({
-            type: "conversation.item.create",
-            item: {
-              role: "user",
-              // texto de entrada
-              input_text: [
-                {
-                  type: "input_text",
-                  text: content,
-                },
-              ],
-            },
-          })
-        );
+        // b) Crear mensaje de usuario en la conversación Realtime
+        sendToOpenAI({
+          type: "conversation.item.create",
+          item: {
+            type: "message", // 👈 obligatorio
+            role: "user",
+            content: [
+              {
+                type: "input_text",
+                text: content,
+              },
+            ],
+          },
+        });
 
-        // c) Disparamos la respuesta del modelo
-        openaiWs.send(
-          JSON.stringify({
-            type: "response.create",
-            response: {
-              // modalities: ["text"] // por defecto ya es texto
-            },
-          })
-        );
+        // c) Pedir una respuesta del modelo
+        sendToOpenAI({
+          type: "response.create",
+          response: {
+            // modalities: ["text"] // por defecto texto
+          },
+        });
       }
     } catch (err) {
       console.error("❌ Error procesando mensaje del cliente:", err);
-      clientWs.send(
-        JSON.stringify({
-          type: "error",
-          message: err.message,
-        })
-      );
+      if (clientWs.readyState === WebSocket.OPEN) {
+        clientWs.send(
+          JSON.stringify({
+            type: "error",
+            message: err.message,
+          })
+        );
+      }
     }
   });
 
@@ -178,7 +201,7 @@ wss.on("connection", (clientWs) => {
       return;
     }
 
-    // Para debug:
+    // Para debug, si quieres:
     // console.log("🎧 Evento Realtime:", event.type);
 
     switch (event.type) {
@@ -196,7 +219,7 @@ wss.on("connection", (clientWs) => {
         break;
       }
 
-      // Texto final para esa parte
+      // Texto final de esa respuesta
       case "response.output_text.done": {
         const text = event.text || "";
         if (clientWs.readyState === WebSocket.OPEN) {
@@ -210,7 +233,7 @@ wss.on("connection", (clientWs) => {
         break;
       }
 
-      // Errores de la API Realtime
+      // Errores desde Realtime
       case "response.failed":
       case "error": {
         const message =
@@ -228,12 +251,11 @@ wss.on("connection", (clientWs) => {
       }
 
       default:
-        // Otros eventos los ignoramos por ahora
-        break;
+      // Otros eventos los ignoramos de momento
     }
   });
 
-  // 4) Manejo de cierres
+  // 4) Cierres y errores
   clientWs.on("close", () => {
     console.log("🔌 Cliente desconectado");
     if (openaiWs.readyState === WebSocket.OPEN) {
