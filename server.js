@@ -201,25 +201,43 @@ wss.on("connection", (clientWs) => {
       return;
     }
 
-    // Para debug, si quieres:
-    // console.log("🎧 Evento Realtime:", event.type);
+    console.log("🎧 Evento Realtime:", event.type);
 
+    // Soportar ambas variantes: response.output_text.delta y response.delta
     switch (event.type) {
-      // Texto parcial (streaming)
+      // Texto parcial (streaming, variante 1)
       case "response.output_text.delta": {
         const delta = event.delta || "";
-        if (delta && clientWs.readyState === WebSocket.OPEN) {
+        const chunk =
+          typeof delta === "string" ? delta : delta.text || "";
+        if (chunk && clientWs.readyState === WebSocket.OPEN) {
           clientWs.send(
             JSON.stringify({
               type: "response_delta",
-              delta,
+              delta: chunk,
             })
           );
         }
         break;
       }
 
-      // Texto final de esa respuesta
+      // Texto parcial (streaming, variante 2)
+      case "response.delta": {
+        const delta = event.delta || "";
+        const chunk =
+          typeof delta === "string" ? delta : delta.text || "";
+        if (chunk && clientWs.readyState === WebSocket.OPEN) {
+          clientWs.send(
+            JSON.stringify({
+              type: "response_delta",
+              delta: chunk,
+            })
+          );
+        }
+        break;
+      }
+
+      // Texto final (variante 1)
       case "response.output_text.done": {
         const text = event.text || "";
         if (clientWs.readyState === WebSocket.OPEN) {
@@ -227,6 +245,24 @@ wss.on("connection", (clientWs) => {
             JSON.stringify({
               type: "response_done",
               text,
+            })
+          );
+        }
+        break;
+      }
+
+      // Texto final / respuesta completa (variante 2)
+      case "response.completed":
+      case "response.done": {
+        const outputText =
+          event.output_text ||
+          event.text ||
+          ""; // por si viene en otro campo
+        if (clientWs.readyState === WebSocket.OPEN) {
+          clientWs.send(
+            JSON.stringify({
+              type: "response_done",
+              text: outputText,
             })
           );
         }
@@ -251,7 +287,7 @@ wss.on("connection", (clientWs) => {
       }
 
       default:
-      // Otros eventos los ignoramos de momento
+      // Otros eventos (session.created, response.created, etc.) solo los vemos en logs
     }
   });
 
