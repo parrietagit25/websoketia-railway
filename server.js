@@ -28,9 +28,28 @@ console.log("🚀 WebSocket bridge running on PORT:", PORT);
 // 1. Detectar marca en el texto
 function detectBrand(text) {
   const brands = [
-    "hyundai", "kia", "toyota", "honda", "nissan", "mazda", "chevrolet",
-    "ford", "suzuki", "mitsubishi", "jeep", "bmw", "mercedes", "audi",
-    "volkswagen", "vw", "renault", "peugeot", "chery", "geely", "baic", "jmc"
+    "hyundai",
+    "kia",
+    "toyota",
+    "honda",
+    "nissan",
+    "mazda",
+    "chevrolet",
+    "ford",
+    "suzuki",
+    "mitsubishi",
+    "jeep",
+    "bmw",
+    "mercedes",
+    "audi",
+    "volkswagen",
+    "vw",
+    "renault",
+    "peugeot",
+    "chery",
+    "geely",
+    "baic",
+    "jmc",
   ];
 
   const low = text.toLowerCase();
@@ -100,8 +119,7 @@ wss.on("connection", (clientWs) => {
     sendToOpenAI({
       type: "session.update",
       session: {
-        // SOLO TEXTO (luego añadimos audio)
-        modalities: ["text"],
+        modalities: ["text"], // luego añadimos audio
         instructions:
           "Eres un asesor de ventas de Automarket Panamá. " +
           "Respondes SIEMPRE en español, de forma profesional y clara. " +
@@ -126,18 +144,27 @@ wss.on("connection", (clientWs) => {
       // 1) Obtener inventario real
       const autos = await fetchAutomarket(userText);
 
-      // 2) Enviar input_text a Realtime (pregunta + inventario)
+      // 2) Construir texto combinado (pregunta + inventario)
       const combinedText =
         `Pregunta del cliente: ${userText}\n\n` +
         `Inventario Automarket (JSON): ${JSON.stringify(autos)}`;
 
+      // 3) Enviar turno de usuario como conversation.item.create
       sendToOpenAI({
-        type: "input_text",
-        text: combinedText,
-        append: true, // se agrega como nuevo turno de usuario
+        type: "conversation.item.create",
+        item: {
+          type: "message",
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: combinedText,
+            },
+          ],
+        },
       });
 
-      // 3) Pedir una respuesta del modelo
+      // 4) Pedir una respuesta del modelo
       sendToOpenAI({
         type: "response.create",
       });
@@ -166,8 +193,7 @@ wss.on("connection", (clientWs) => {
       return;
     }
 
-    // Para debug:
-    // console.log("🎧 Evento Realtime:", event.type);
+    // Si quieres ver todo: console.log("🎧 Evento Realtime:", event.type);
 
     switch (event.type) {
       // Texto parcial (streaming)
@@ -200,8 +226,7 @@ wss.on("connection", (clientWs) => {
             })
           );
         }
-        // limpiamos buffer para el siguiente turno
-        fullText = "";
+        fullText = ""; // limpiar buffer
         break;
       }
 
