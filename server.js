@@ -30,7 +30,7 @@ wss.on("connection", (ws) => {
 
                 // Llamada a OpenAI Realtime (REST)
                 const completion = await client.responses.create({
-                    model: "gpt-4o-realtime-preview",
+                    model: "gpt-4o-mini",
                     input: data.text
                 });
 
