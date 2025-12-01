@@ -1,35 +1,29 @@
-// server.js
-// Servidor WebSocket simple para Railway
+import http from "http";
+import { WebSocketServer } from "ws";
 
-const http = require("http");
-const { WebSocketServer } = require("ws");
+const PORT = process.env.PORT;  // Railway lo asigna
 
-const PORT = process.env.PORT || 3000;
-
-// Servidor HTTP básico para pruebas
 const server = http.createServer((req, res) => {
   res.writeHead(200, { "Content-Type": "text/plain" });
-  res.end("WebSocket server is running 🚀\n");
+  res.end("WebSocket server is running.");
 });
 
-// Crear WebSocket server usando el mismo servidor HTTP
 const wss = new WebSocketServer({ server });
 
 wss.on("connection", (ws) => {
-  console.log("🔵 Nuevo cliente conectado");
-
-  ws.send("👋 Bienvenido al servidor WebSocket en Railway!");
+  console.log("Cliente conectado");
+  ws.send("Bienvenido al WebSocket!");
 
   ws.on("message", (msg) => {
-    console.log("📩 Mensaje recibido:", msg.toString());
-    ws.send("Echo: " + msg.toString());
+    console.log("Mensaje recibido:", msg.toString());
+    ws.send("Eco: " + msg);
   });
 
   ws.on("close", () => {
-    console.log("🔴 Cliente desconectado");
+    console.log("Cliente desconectado");
   });
 });
 
 server.listen(PORT, () => {
-  console.log("🚀 Servidor escuchando en el puerto", PORT);
+  console.log("Servidor WebSocket escuchando en puerto", PORT);
 });
